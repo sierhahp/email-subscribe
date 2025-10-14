@@ -18,10 +18,11 @@ app = FastAPI(title=f"newsletter-webhook-{JOB_ID}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=["*"],  # Allow all origins for API Gateway
     allow_credentials=False,
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Simple payload schema
