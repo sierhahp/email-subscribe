@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Subscribe</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { display:flex; min-height:100svh; margin:0; align-items:center; justify-content:center; background:#f7f7f8; }
+    .card { width:100%; max-width:420px; background:#fff; padding:24px; border-radius:12px; box-shadow:0 2px 14px rgba(0,0,0,.08); }
+    h1 { font-size:1.25rem; margin:0 0 8px; }
+    p { color:#555; margin-top:0; }
+    form { display:grid; gap:12px; margin-top:12px; }
+    .row { display:flex; gap:8px; }
+    input[type="email"] { flex:1; padding:12px; border:1px solid #ddd; border-radius:8px; font-size:1rem; }
+    button { padding:12px 16px; border:0; border-radius:8px; background:#111827; color:#fff; font-weight:600; cursor:pointer; }
+    button[disabled] { opacity:.6; cursor:wait; }
+    .msg { font-size:.95rem; min-height:1.2em; }
+    .msg.ok { color:#05603a; }
+    .msg.err { color:#b42318; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+  </style>
+</head>
+<body>
+  <main class="card" aria-labelledby="title">
+    <h1 id="title">Subscribe to our newsletter</h1>
+    <p>Get updates straight to your inbox.</p>
+
+    <form id="subForm" novalidate>
+      <!-- Honeypot (spam trap) -->
+      <label class="sr-only" for="hp">Leave this field empty</label>
+      <input id="hp" name="company" type="text" autocomplete="organization" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;" />
+
+      <div class="row">
+        <label class="sr-only" for="email">Email address</label>
+        <input id="email" name="email" type="email" placeholder="you@example.com" required inputmode="email" autocomplete="email" />
+        <button id="submitBtn" type="submit">Subscribe</button>
+      </div>
+
+      <div id="msg" class="msg" role="status" aria-live="polite"></div>
+    </form>
+  </main>
+
+  <script>
+    // === CONFIG: set your webhook endpoint here ===
+    const WEBHOOK_URL = "https://email-subscribe-job8-140333076201.us-central1.run.app/subscribe";
+
+    // Optional: switch to "form" to send as application/x-www-form-urlencoded
+    const DELIVERY_MODE = "json"; // "json" | "form"
+
+    const form = document.getElementById('subForm');
+    const emailEl = document.getElementById('email');
+    const btn = document.getElementById('submitBtn');
+    const msg = document.getElementById('msg');
+    const hp = document.getElementById('hp');
+
+    function setStatus(text, type) {
+      msg.textContent = text || "";
+      msg.className = "msg " + (type || "");
+    }
+
+    function validEmail(v) {
+      // Simple, permissive email check
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      setStatus("", "");
+      if (hp.value.trim() !== "") {
+        // Bot likely filled the honeypot—silently succeed.
+        form.reset();
+        setStatus("Thanks! Please check your inbox.", "ok");
+        return;
+      }
+
+      const email = emailEl.value.trim();
+      if (!validEmail(email)) {
+        setStatus("Please enter a valid email address.", "err");
+        emailEl.focus();
+        return;
+      }
+
+      btn.disabled = true;
+
+      // Payload
+      const payload = {
+        email,
+        source: window.location.href,
+        subscribed_at: new Date().toISOString(),
+        user_agent: navigator.userAgent
+      };
+
+      let fetchOptions = {
+        method: "POST",
+        headers: {},
+        body: null,
+        // You can set credentials: 'include' if your webhook needs cookies (usually not)
+      };
+
+      if (DELIVERY_MODE === "json") {
+        fetchOptions.headers["Content-Type"] = "application/json";
+        fetchOptions.body = JSON.stringify(payload);
+      } else {
+        fetchOptions.headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+        const params = new URLSearchParams();
+        Object.entries(payload).forEach(([k, v]) => params.append(k, v));
+        fetchOptions.body = params.toString();
+      }
+
+      try {
+        const res = await fetch(WEBHOOK_URL, fetchOptions);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        setStatus("Thanks for subscribing! Check your inbox soon.", "ok");
+        form.reset();
+      } catch (err) {
+        // Common cause: CORS blocked by webhook server.
+        setStatus("Couldn't submit. If this persists, your webhook may need CORS enabled.", "err");
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
+
