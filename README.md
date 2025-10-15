@@ -53,7 +53,7 @@ Use Cloud Build to build your image in the cloud (no local Docker needed):
 
 Example:
 ```bash
-./deploy-cloudbuild.sh my-project job8 us-central1 my-subscribers https://mysite.com
+./deploy-cloudbuild.sh my-project job8 us-central1 my-subscribers https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app
 ```
 
 #### Option 2: Local Docker
@@ -66,7 +66,7 @@ If you have Docker installed locally:
 
 Example:
 ```bash
-./deploy.sh my-project job8 us-central1 my-subscribers https://mysite.com
+./deploy.sh my-project job8 us-central1 my-subscribers https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app
 ```
 
 > **Note**: If you don't have Docker installed, see [INSTALL_DOCKER.md](INSTALL_DOCKER.md) or use Option 1 above.
@@ -88,8 +88,9 @@ docker push gcr.io/YOUR_PROJECT_ID/email-subscribe-YOUR_JOB_ID:latest
 gcloud run deploy email-subscribe-YOUR_JOB_ID \
   --image gcr.io/YOUR_PROJECT_ID/email-subscribe-YOUR_JOB_ID:latest \
   --region YOUR_REGION \
-  --allow-unauthenticated \
-  --set-env-vars GCS_BUCKET=YOUR_BUCKET,JOB_ID=YOUR_JOB_ID,CORS_ORIGINS=https://your-site.com
+  --no-allow-unauthenticated \
+  --ingress internal-and-cloud-load-balancing \
+  --set-env-vars GCS_BUCKET=YOUR_BUCKET,JOB_ID=YOUR_JOB_ID,CORS_ORIGINS=https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app
 ```
 
 ## API Endpoints
@@ -183,16 +184,27 @@ Example:
 
 ## Proxy Setup (Recommended)
 
-To avoid CORS issues, set up a proxy in your edge/CDN:
+To avoid CORS issues, put an external HTTPS Load Balancer in front of Cloud Run and proxy to the Load Balancer host (not the `run.app` URL):
 
 ```
-/api/{job_id}/*  →  https://email-subscribe-{id}-{hash}.run.app/*
+/api/{job_id}/*  →  https://<YOUR-LB-HOSTNAME>/*
 ```
 
-Then update `index.html` to use:
+Then update `index.html` to use a same-origin path via your LB:
 ```javascript
-const WEBHOOK_URL = "/api/YOUR_JOB_ID/subscribe";
+const WEBHOOK_URL = "/api/YOUR_JOB_ID/subscribe"; // same-origin via your LB
 ```
+
+### Expose via HTTPS Load Balancer (Serverless NEG)
+
+Use an external HTTPS Load Balancer with a Serverless NEG that targets your private Cloud Run service.
+
+- Backend: Serverless NEG → Cloud Run service
+- Backend auth: Use a service account so the LB sends an identity token to Cloud Run
+- Cloud Run ingress: `internal-and-cloud-load-balancing` (keeps service private)
+- Domain: Point your site at the LB hostname, or route `/api/{job_id}/*` to the LB
+
+This keeps browser requests same-origin (to the LB), and the LB calls Cloud Run with proper auth. Result: no CORS preflight failures, no unauthenticated calls blocked by org policy.
 
 ## Frontend Integration
 
@@ -213,13 +225,8 @@ async function subscribe(email) {
 }
 ```
 
-### Direct Cloud Run call:
-Update `index.html` with your Cloud Run URL:
-```javascript
-const WEBHOOK_URL = "https://email-subscribe-YOUR_JOB_ID-HASH.run.app/subscribe";
-```
-
-Or simply update the `WEBHOOK_URL` constant in `index.html` to point to your deployed service.
+### Direct Cloud Run call
+**Not supported** in organizations that block public access to Cloud Run. Use the HTTPS Load Balancer + Serverless NEG approach above. If you keep an example, clearly mark it as only for orgs that allow public Cloud Run.
 
 ## Project Structure
 
@@ -240,6 +247,14 @@ Or simply update the `WEBHOOK_URL` constant in `index.html` to point to your dep
 ```
 
 ## Optional Enhancements
+
+### TL;DR of org-safe setup
+
+- Deploy Cloud Run with `--no-allow-unauthenticated` and `--ingress internal-and-cloud-load-balancing`.
+- Front Cloud Run with an external HTTPS Load Balancer using Serverless NEG.
+- Configure backend authentication with a service account so the LB sends an identity token.
+- Route your site (same-origin) or `/api/{job_id}/*` to the LB; call the API via same-origin.
+- For local dev CORS, list exact origins and allow `POST`, `GET`, `OPTIONS`.
 
 ### Idempotency (avoid duplicates)
 Hash emails and store individually:
@@ -264,10 +279,32 @@ Ensure your service account has the following IAM roles:
 - `Storage Object Creator`
 - `Storage Object Viewer`
 
-### CORS Issues
-1. Check `CORS_ORIGINS` environment variable
-2. Use a proxy to avoid CORS entirely
-3. Verify browser console for CORS errors
+### CORS Guidance (local dev only)
+
+If you still want to test cross-origin (e.g., calling the LB from `http://localhost:3000` or your Vercel domains):
+
+- `CORS_ORIGINS` must list exact origins (scheme + host + optional port), comma-separated, no trailing slashes. Example: `http://localhost:3000,https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app`
+- FastAPI `CORSMiddleware` should allow `POST`, `GET`, and `OPTIONS`, and headers `Content-Type`, `Authorization` (or `*`).
+- Keep `allow_credentials=false` unless you truly send cookies/Authorization from the browser.
+- Preflight 401/403 means auth blocked the OPTIONS probe. Fix by using HTTPS LB + Serverless NEG and calling same-origin path `/api/{job_id}/subscribe`.
+
+### Troubleshooting → CORS
+
+- Error: `Response to preflight request doesn't pass access control check` with status 401/403
+  - Cause: Cloud Run requires auth; browser’s preflight is blocked.
+  - Fix: Use HTTPS LB + Serverless NEG with backend auth; call same-origin path `/api/{job_id}/subscribe`.
+
+- Error: `No 'Access-Control-Allow-Origin' header present` on a 200
+  - Cause: Origin not in `CORS_ORIGINS`.
+  - Fix: Add the exact origin, or use the same-origin proxy so CORS isn’t needed.
+
+### TL;DR
+
+- Change deploy flags: `--no-allow-unauthenticated` and `--ingress internal-and-cloud-load-balancing`.
+- Add LB section with Serverless NEG + backend service account auth.
+- Update proxy to hit the LB host and recommend same-origin calls.
+- Remove/mark the direct Cloud Run example as not applicable for orgs blocking public Cloud Run.
+- Tighten CORS notes (exact origins, methods/headers) for local dev only.
 
 ### Deployment Issues
 1. Verify Docker image builds successfully

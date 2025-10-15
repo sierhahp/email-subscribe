@@ -6,7 +6,7 @@ This guide explains how to use the `index.html` subscription form with your depl
 
 ### Step 1: Deploy the Backend
 
-Deploy your email subscription service to Cloud Run:
+Deploy your email subscription service to Cloud Run and expose it via an HTTPS Load Balancer (Serverless NEG). For direct backend calls, you can also use Render.
 
 ```bash
 ./deploy.sh your-project-id job8 us-central1 your-bucket https://your-site.com
@@ -22,11 +22,11 @@ https://email-subscribe-job8-HASH.run.app
 Open `index.html` and update the `WEBHOOK_URL` constant:
 
 ```javascript
-// Option 1: Direct Cloud Run URL (requires CORS setup)
-const WEBHOOK_URL = "https://email-subscribe-job8-HASH.run.app/subscribe";
-
-// Option 2: Proxy URL (recommended, no CORS issues)
+// Option 1: Same-origin via Load Balancer (recommended)
 const WEBHOOK_URL = "/api/job8/subscribe";
+
+// Option 2: Direct to Render backend
+const WEBHOOK_URL = "https://email-subscribe.onrender.com/subscribe";
 ```
 
 ### Step 3: Host the Frontend
@@ -56,9 +56,9 @@ To avoid CORS issues and keep everything under your domain:
 
 ### 1. Set up a proxy in your CDN/Edge
 
-Configure your edge (Cloudflare, Cloud Run, etc.) to proxy:
+Configure your edge/CDN to proxy your site’s origin to your LB host:
 ```
-/api/{job_id}/*  →  https://email-subscribe-{job_id}-HASH.run.app/*
+/api/{job_id}/*  →  https://<YOUR-LB-HOSTNAME>/*
 ```
 
 ### 2. Update index.html
@@ -77,9 +77,9 @@ addEventListener('fetch', event => {
 async function handleRequest(request) {
   const url = new URL(request.url)
   
-  // Proxy /api/job8/* to Cloud Run
+  // Proxy /api/job8/* to your LB host
   if (url.pathname.startsWith('/api/job8/')) {
-    const targetUrl = 'https://email-subscribe-job8-HASH.run.app' + url.pathname.replace('/api/job8', '')
+    const targetUrl = 'https://<YOUR-LB-HOSTNAME>' + url.pathname.replace('/api/job8', '')
     const modifiedRequest = new Request(targetUrl, request)
     return fetch(modifiedRequest)
   }

@@ -41,7 +41,7 @@ Choose one of these methods:
   job8 \
   us-central1 \
   ${BUCKET_NAME} \
-  "https://your-site.com"
+  "https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app"
 ```
 
 ### Method B: Local Docker
@@ -54,36 +54,31 @@ If you have Docker installed:
   job8 \
   us-central1 \
   ${BUCKET_NAME} \
-  "https://your-site.com"
+  "https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app"
 ```
 
 > **Don't have Docker?** Use Method A or see [INSTALL_DOCKER.md](INSTALL_DOCKER.md)
 
 ## Step 4: Update Your Frontend
 
-After deployment, you'll get a URL like:
-```
-https://email-subscribe-job8-HASH.run.app
-```
+After deployment, expose Cloud Run via an HTTPS Load Balancer (Serverless NEG). Use that LB host for your site’s same-origin calls, or use the Render backend URL below for direct calls.
 
-### Option A: Direct Cloud Run URL
+### Option A: Same-origin via Load Balancer (Recommended)
 
 1. Open `index.html`
 2. Find this line:
    ```javascript
    const WEBHOOK_URL = "https://WEBHOOK_URL_HERE";
    ```
-3. Replace with your Cloud Run URL:
+3. Replace with a same-origin path (proxied by your LB):
    ```javascript
-   const WEBHOOK_URL = "https://email-subscribe-job8-HASH.run.app/subscribe";
+   const WEBHOOK_URL = "/api/job8/subscribe";
    ```
 
-### Option B: Proxy URL (Recommended)
-
-If you set up a proxy at `/api/job8/*`:
+### Option B: Direct to Render backend
 
 ```javascript
-const WEBHOOK_URL = "/api/job8/subscribe";
+const WEBHOOK_URL = "https://email-subscribe.onrender.com/subscribe";
 ```
 
 ## Step 5: Host Your Frontend
@@ -117,7 +112,7 @@ gsutil cat gs://${BUCKET_NAME}/subscribers/job8/emails.jsonl
 ## Test the API Directly
 
 ```bash
-curl -X POST https://email-subscribe-job8-HASH.run.app/subscribe \
+curl -X POST https://email-subscribe.onrender.com/subscribe \
   -H "Content-Type: application/json" \
   -d '{
     "email": "test@example.com",

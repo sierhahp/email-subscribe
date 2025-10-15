@@ -6,6 +6,12 @@
       "use": "@vercel/static"
     }
   ],
+  "rewrites": [
+    {
+      "source": "/api/job8/(.*)",
+      "destination": "https://email-subscribe.onrender.com/$1"
+    }
+  ],
   "routes": [
     {
       "src": "/(.*)",

@@ -37,7 +37,7 @@ git push -u origin main
 6. **Add Environment Variables:**
    - `GCS_BUCKET` = `email-subscribers-1760399688`
    - `JOB_ID` = `job8`
-   - `CORS_ORIGINS` = `http://127.0.0.1:5501,http://localhost:5501`
+   - `CORS_ORIGINS` = `http://127.0.0.1:5501,http://localhost:5501,https://email-subscribe.onrender.com,https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app`
    - `PORT` = `8080`
 7. **Click "Create Web Service"**
 
@@ -48,7 +48,7 @@ Once deployed, Render will give you a URL like:
 https://email-subscribe.onrender.com
 ```
 
-Update `index.html`:
+Update `index.html` (Render backend URL):
 ```javascript
 const WEBHOOK_URL = "https://email-subscribe.onrender.com/subscribe";
 ```

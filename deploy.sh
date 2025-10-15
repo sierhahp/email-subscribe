@@ -17,7 +17,7 @@ if [ $# -lt 4 ]; then
     echo "Usage: ./deploy.sh <PROJECT_ID> <JOB_ID> <REGION> <BUCKET_NAME> [CORS_ORIGINS]"
     echo ""
     echo "Example:"
-    echo "  ./deploy.sh my-project job8 us-central1 my-subscribers-bucket https://mysite.com"
+    echo "  ./deploy.sh my-project job8 us-central1 my-subscribers-bucket https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app"
     exit 1
 fi
 
@@ -71,7 +71,8 @@ echo -e "${YELLOW}Step 3: Deploying to Cloud Run...${NC}"
 gcloud run deploy ${SERVICE_NAME} \
   --image ${IMAGE_NAME} \
   --region ${REGION} \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
+  --ingress internal-and-cloud-load-balancing \
   --set-env-vars GCS_BUCKET=${BUCKET_NAME},JOB_ID=${JOB_ID},CORS_ORIGINS=${CORS_ORIGINS} \
   --platform managed
 
@@ -86,22 +87,22 @@ echo -e "${GREEN}Deployment Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Your service is now available at:"
-echo -e "${YELLOW}https://${SERVICE_NAME}-${REGION}.run.app${NC}"
+echo -e "${YELLOW}<your HTTPS Load Balancer host> (fronting ${SERVICE_NAME})${NC}"
 echo ""
 echo "API Endpoints:"
-echo "  - POST https://${SERVICE_NAME}-${REGION}.run.app/subscribe"
-echo "  - GET  https://${SERVICE_NAME}-${REGION}.run.app/health"
-echo "  - GET  https://${SERVICE_NAME}-${REGION}.run.app/schema"
-echo "  - GET  https://${SERVICE_NAME}-${REGION}.run.app/data"
+echo "  - POST https://<LB_HOST>/subscribe"
+echo "  - GET  https://<LB_HOST>/health"
+echo "  - GET  https://<LB_HOST>/schema"
+echo "  - GET  https://<LB_HOST>/data"
 echo ""
 echo "Frontend Integration:"
 echo "  Update index.html WEBHOOK_URL to:"
-echo "  https://${SERVICE_NAME}-${REGION}.run.app/subscribe"
+echo "  https://email-subscribe.onrender.com/subscribe (or your LB same-origin path)"
 echo ""
 echo "Data will be stored in:"
 echo "  gs://${BUCKET_NAME}/subscribers/${JOB_ID}/emails.jsonl"
 echo ""
 echo "To set up a proxy, route:"
-echo "  /api/${JOB_ID}/* → https://${SERVICE_NAME}-${REGION}.run.app/*"
+echo "  /api/${JOB_ID}/* → https://<LB_HOST>/*"
 echo ""
 

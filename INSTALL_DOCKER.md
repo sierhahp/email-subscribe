@@ -42,7 +42,7 @@ docker --version
 If you don't want to install Docker locally, use the Cloud Build deployment script instead:
 
 ```bash
-./deploy-cloudbuild.sh your-project-id job8 us-central1 your-bucket https://your-site.com
+./deploy-cloudbuild.sh your-project-id job8 us-central1 your-bucket "https://email-subscribe-theta.vercel.app,https://email-subscribe-git-main-sierhahs-projects.vercel.app,https://email-subscribe-moatqed0u-sierhahs-projects.vercel.app"
 ```
 
 This script uses Google Cloud Build to build your Docker image in the cloud, so you don't need Docker installed locally.
