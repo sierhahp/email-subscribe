@@ -2,3 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic[email]
 google-cloud-storage
+sqlalchemy
+psycopg[binary]
+alembic
+google-cloud-secret-manager

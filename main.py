@@ -5,13 +5,16 @@ import json
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from google.cloud import storage
+from sqlalchemy import text
+from db import engine
 
 JOB_ID = os.getenv("JOB_ID", "local")
-BUCKET = os.getenv("GCS_BUCKET")  # required
+BUCKET = os.getenv("GCS_BUCKET")  # optional if WRITE_GCS=false
+WRITE_GCS = os.getenv("WRITE_GCS", "false").lower() == "true"
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",") if os.getenv("CORS_ORIGINS") else ["*"]
 
 app = FastAPI(title=f"newsletter-webhook-{JOB_ID}")
@@ -62,8 +65,6 @@ def _append_jsonl(record: dict):
 
     # If object exists, compose append
     if blob.exists():
-        # Download existing then upload concatenated content for simplicity
-        # For higher volume, switch to GCS compose API or PubSub
         prev = blob.download_as_bytes()
         blob.upload_from_string(prev + line.encode("utf-8"), content_type="application/x-ndjson")
     else:
@@ -80,18 +81,20 @@ def schema():
 
 @app.get("/data")
 def data(limit: int = 100, offset: int = 0):
-    """Basic reader to match your standard GET /data pattern."""
-    client, bucket_name = _gcs_client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(EMAIL_LOG_OBJECT)
-    if not blob.exists():
-        return {"rows": [], "total": 0}
-
-    content = blob.download_as_text()
-    rows = [json.loads(x) for x in content.splitlines() if x.strip()]
-    total = len(rows)
-    rows = rows[offset: offset + limit]
-    return {"rows": rows, "total": total, "limit": limit, "offset": offset}
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                """
+                SELECT email, source, user_agent, job_id, subscribed_at, unsubscribed_at
+                FROM subscribers
+                ORDER BY subscribed_at DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ), {"limit": limit, "offset": offset}).mappings().all()
+            total = conn.execute(text("SELECT COUNT(*) AS c FROM subscribers")).scalar_one()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+    return {"rows": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 @app.get("/code")
 def code():
@@ -100,14 +103,85 @@ def code():
 
 @app.post("/subscribe")
 async def subscribe(payload: SubscribeIn, request: Request):
-    # Basic duplicate of fields plus server-side source
     record = payload.dict()
-    # Capture origin URL if not provided by client
+    if not record.get("subscribed_at"):
+        record["subscribed_at"] = datetime.now(timezone.utc).isoformat()
     if not record.get("source"):
         record["source"] = str(request.headers.get("origin") or "")
+
     try:
-        _append_jsonl(record)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                INSERT INTO subscribers (email, source, user_agent, job_id, subscribed_at)
+                VALUES (:email, :source, :ua, :job_id, :subscribed_at)
+                ON CONFLICT (email_norm) DO UPDATE SET
+                  source = COALESCE(EXCLUDED.source, subscribers.source),
+                  user_agent = COALESCE(EXCLUDED.user_agent, subscribers.user_agent),
+                  job_id = COALESCE(EXCLUDED.job_id, subscribers.job_id)
+                """
+                ),
+                {
+                    "email": record["email"],
+                    "source": record.get("source"),
+                    "ua": record.get("user_agent") or request.headers.get("user-agent"),
+                    "job_id": JOB_ID,
+                    "subscribed_at": record["subscribed_at"],
+                },
+            )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Storage error: {e}")
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+    if WRITE_GCS:
+        try:
+            _append_jsonl({
+                "email": record["email"],
+                "source": record.get("source"),
+                "user_agent": record.get("user_agent") or request.headers.get("user-agent"),
+                "job_id": JOB_ID,
+                "subscribed_at": record["subscribed_at"],
+            })
+        except Exception as e:
+            # Don't fail the request if optional GCS write fails
+            pass
+
     return {"ok": True}
+
+
+@app.get("/export.csv")
+def export_csv():
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                """
+                SELECT email, source, user_agent, job_id, subscribed_at, unsubscribed_at
+                FROM subscribers
+                ORDER BY subscribed_at DESC
+                """
+            )).mappings().all()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
+
+    buf = io.StringIO()
+    fieldnames = [
+        "email",
+        "source",
+        "user_agent",
+        "job_id",
+        "subscribed_at",
+        "unsubscribed_at",
+    ]
+    import csv
+
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    for r in rows:
+        writer.writerow(dict(r))
+
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=subscribers.csv"},
+    )
 

@@ -256,6 +256,39 @@ async function subscribe(email) {
 - Route your site (same-origin) or `/api/{job_id}/*` to the LB; call the API via same-origin.
 - For local dev CORS, list exact origins and allow `POST`, `GET`, `OPTIONS`.
 
+## Cloud SQL (Postgres) Storage (Optional but Recommended)
+
+You can store subscribers in Cloud SQL Postgres instead of GCS JSONL.
+
+### Requirements
+
+- Dependencies: `sqlalchemy`, `psycopg[binary]`, `alembic` (already in `requirements.txt`)
+- Env var `DATABASE_URI`, e.g.:
+  ``
+  postgresql+psycopg://USER:PASSWORD@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE
+  ``
+- Cloud Run flags: `--add-cloudsql-instances PROJECT:REGION:INSTANCE`
+
+### Migrations
+
+Alembic is configured in `alembic/`. Run the initial migration:
+
+```bash
+alembic upgrade head
+```
+
+This creates a `subscribers` table with a unique index on normalized email.
+
+### Endpoints
+
+- `POST /subscribe` upserts by normalized email
+- `GET /data` reads from Postgres with pagination
+- `GET /export.csv` downloads CSV
+
+### Dual write to GCS (optional)
+
+Set `WRITE_GCS=true` and `GCS_BUCKET` to also append JSONL to GCS as a fallback.
+
 ### Idempotency (avoid duplicates)
 Hash emails and store individually:
 ```

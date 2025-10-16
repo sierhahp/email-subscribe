@@ -4,7 +4,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+COPY main.py ./
+COPY db.py ./
+COPY models.py ./
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 ENV PORT=8080
 EXPOSE 8080
